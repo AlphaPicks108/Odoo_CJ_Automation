@@ -1,16 +1,16 @@
 import os
+import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import time
-import traceback  # For error reporting
 
 # ✅ Fetch Credentials from GitHub Secrets
 CJ_USERNAME = os.getenv("CJ_USERNAME")
 CJ_PASSWORD = os.getenv("CJ_PASSWORD")
-CJ_LOGIN_URL = "https://www.cjdropshipping.com/login.html"
+CJ_LOGIN_URL = "https://www.cjdropshipping.com/login.html?target=aHR0cHM6Ly93d3cuY2pkcm9wc2hpcHBpbmcuY29tL3NlYXJjaC9raXRjaGVuLmh0bWw/Zmxvd0lkPTE1NjU2Mjg1ODE0NjkwNjExMjA="
 
 ODOO_USERNAME = os.getenv("ODOO_USERNAME")
 ODOO_PASSWORD = os.getenv("ODOO_PASSWORD")
@@ -18,109 +18,80 @@ ODOO_LOGIN_URL = "https://alphapicks.odoo.com/web/login?redirect=%2Fodoo%3F"
 
 # ✅ Initialize WebDriver (Chrome)
 options = webdriver.ChromeOptions()
-options.add_argument("--headless")  # Run Chrome in the background
-options.add_argument("--disable-gpu")
-options.add_argument("--window-size=1920x1080")  
-
+options.add_argument("--headless")  # Run Chrome in the background (remove for debugging)
+options.add_argument("--disable-blink-features=AutomationControlled")  # Prevent bot detection
 driver = webdriver.Chrome(options=options)
-wait = WebDriverWait(driver, 15)  # Wait for elements to appear
-
 
 def login_cj():
-    """ Logs into CJ Dropshipping with error handling """
-    try:
-        print("🔄 Attempting to log in to CJ Dropshipping...")
-        driver.get(CJ_LOGIN_URL)
-        time.sleep(5)
+    """ Logs into CJ Dropshipping """
+    driver.get(CJ_LOGIN_URL)
+    time.sleep(5)  # Wait for the page to load
 
-        # Wait for login fields to appear
-        username_field = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='username']")))
-        password_field = driver.find_element(By.CSS_SELECTOR, "input[name='password']")
-        
-        username_field.send_keys(CJ_USERNAME)
-        password_field.send_keys(CJ_PASSWORD)
-        password_field.send_keys(Keys.RETURN)
-        
-        print("✅ Successfully logged into CJ Dropshipping")
-        time.sleep(5)
+    wait = WebDriverWait(driver, 15)
 
-    except Exception as e:
-        print("❌ ERROR: Failed to login to CJ Dropshipping")
-        print(traceback.format_exc())
+    # Click on the username field before typing
+    username_field = wait.until(EC.element_to_be_clickable((By.NAME, "username")))
+    ActionChains(driver).move_to_element(username_field).click().perform()
+    username_field.send_keys(CJ_USERNAME)
 
+    # Click on the password field before typing
+    password_field = wait.until(EC.element_to_be_clickable((By.NAME, "password")))
+    ActionChains(driver).move_to_element(password_field).click().perform()
+    password_field.send_keys(CJ_PASSWORD)
+
+    # Click the Sign-In button
+    sign_in_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Sign in')]")))
+    sign_in_button.click()
+
+    time.sleep(5)  # Wait for login to complete
+
+    print("✅ Logged into CJ Dropshipping (if no errors)")
 
 def scrape_products():
     """ Scrapes product details from CJ Dropshipping """
-    try:
-        print("🔄 Fetching products from CJ Dropshipping...")
-        driver.get("https://app.cjdropshipping.com/myCJ.html#/productList")
-        time.sleep(10)
+    driver.get("https://app.cjdropshipping.com/myCJ.html#/productList")
+    time.sleep(5)
 
-        products = []
-        product_elements = driver.find_elements(By.CLASS_NAME, "product-title")
+    products = []
+    for i in range(5):  # Scraping first 5 products
+        try:
+            title = driver.find_elements(By.CLASS_NAME, "product-title")[i].text
+            price = float(driver.find_elements(By.CLASS_NAME, "product-price")[i].text.replace("$", ""))
+            image = driver.find_elements(By.CLASS_NAME, "product-img")[i].get_attribute("src")
 
-        if not product_elements:
-            print("⚠️ No products found on CJ Dropshipping. The page structure may have changed.")
-            return []
+            market_price = price * 1.5  # Example formula (Modify if needed)
+            if market_price >= 1500:
+                products.append({"title": title, "price": price, "image": image})
+        except:
+            continue
 
-        for i in range(min(5, len(product_elements))):  # Scraping first 5 products
-            try:
-                title = product_elements[i].text
-                price_elements = driver.find_elements(By.CLASS_NAME, "product-price")
-
-                if price_elements:
-                    price = float(price_elements[i].text.replace("$", ""))
-                else:
-                    print(f"⚠️ Skipping product {i+1} due to missing price")
-                    continue
-
-                image = driver.find_elements(By.CLASS_NAME, "product-img")[i].get_attribute("src")
-
-                market_price = price * 1.5
-                if market_price >= 1500:
-                    products.append({"title": title, "price": price, "image": image})
-            except Exception as e:
-                print(f"⚠️ Skipping product {i+1} due to an error: {str(e)}")
-
-        print(f"✅ Scraped {len(products)} valid products from CJ Dropshipping")
-        return products
-    except Exception as e:
-        print("❌ ERROR: Failed to scrape products from CJ Dropshipping")
-        print(traceback.format_exc())
-        return []
-
+    print("✅ Scraped", len(products), "products")
+    return products
 
 def login_odoo():
-    """ Logs into Odoo with error handling """
-    try:
-        print("🔄 Logging into Odoo...")
-        driver.get(ODOO_LOGIN_URL)
-        time.sleep(5)
+    """ Logs into Odoo """
+    driver.get(ODOO_LOGIN_URL)
+    time.sleep(5)
 
-        username_field = wait.until(EC.presence_of_element_located((By.NAME, "login")))
-        password_field = driver.find_element(By.NAME, "password")
+    wait = WebDriverWait(driver, 15)
 
-        username_field.send_keys(ODOO_USERNAME)
-        password_field.send_keys(ODOO_PASSWORD)
-        password_field.send_keys(Keys.RETURN)
-        
-        print("✅ Successfully logged into Odoo")
-        time.sleep(5)
+    # Enter login details
+    login_field = wait.until(EC.element_to_be_clickable((By.NAME, "login")))
+    login_field.send_keys(ODOO_USERNAME)
 
-    except Exception as e:
-        print("❌ ERROR: Failed to login to Odoo")
-        print(traceback.format_exc())
+    password_field = wait.until(EC.element_to_be_clickable((By.NAME, "password")))
+    password_field.send_keys(ODOO_PASSWORD)
 
+    # Click login button
+    password_field.send_keys(Keys.RETURN)
+    time.sleep(5)
+
+    print("✅ Logged into Odoo")
 
 def upload_to_odoo(products):
     """ Uploads products to Odoo """
-    if not products:
-        print("⚠️ No products to upload. Exiting upload process.")
-        return
-
     for product in products:
         try:
-            print(f"🔄 Uploading {product['title']} to Odoo...")
             driver.get("https://alphapicks.odoo.com/web#menu_id=5&action=10")  # Odoo Product upload page
             time.sleep(5)
 
@@ -130,21 +101,27 @@ def upload_to_odoo(products):
             driver.find_element(By.XPATH, "//button[contains(text(),'Save')]").click()
             time.sleep(3)
 
-            print(f"✅ Successfully uploaded {product['title']} to Odoo")
-        except Exception as e:
-            print(f"❌ ERROR: Failed to upload {product['title']} to Odoo")
-            print(traceback.format_exc())
-
+            print(f"✅ Uploaded {product['title']} to Odoo")
+        except:
+            print(f"❌ Failed to upload {product['title']}")
 
 def main():
     try:
         login_cj()
         products = scrape_products()
+
+        if not products:
+            print("⚠️ No products found on CJ Dropshipping. Exiting.")
+            return
+
         login_odoo()
         upload_to_odoo(products)
-    finally:
-        driver.quit()  # Ensure the browser is always closed
 
+    except Exception as e:
+        print(f"❌ ERROR: {str(e)}")
+
+    finally:
+        driver.quit()
 
 if __name__ == "__main__":
     main()
